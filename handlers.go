@@ -41,6 +41,7 @@ func handlerValidate(w http.ResponseWriter, req *http.Request) {
 	}
 	type returnVals struct {
 		Valid bool `json:"valid"`
+		Cleaned_body string `json:"cleaned_body"`
 	}
 
 	decoder := json.NewDecoder(req.Body)
@@ -59,6 +60,7 @@ func handlerValidate(w http.ResponseWriter, req *http.Request) {
 
 	respondWithJSON(w, http.StatusOK, returnVals{
 		Valid: true,
+		Cleaned_body: replaceProfanity(params.Body),
 	})
 
 }
