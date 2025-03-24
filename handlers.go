@@ -30,8 +30,13 @@ func (cfg *apiConfig) handlerMetrics(w http.ResponseWriter, req *http.Request) {
 </html>`, cfg.fileserverHits.Load())))
 }
 
-func (cfg *apiConfig) handlerResetHits(w http.ResponseWriter, req *http.Request) {
+func (cfg *apiConfig) handlerReset(w http.ResponseWriter, req *http.Request) {
+	if cfg.platform != "dev" {
+		respondWithError(w, http.StatusForbidden, "Unable to complete reset", nil)
+		return
+	}
 	cfg.fileserverHits.Store(0)
+	cfg.db.DeleteUsers(req.Context())
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -63,4 +68,30 @@ func handlerValidate(w http.ResponseWriter, req *http.Request) {
 		Cleaned_body: replaceProfanity(params.Body),
 	})
 
+}
+
+func (cfg *apiConfig) handlerUsers(w http.ResponseWriter, req *http.Request) {
+	type parameters struct {
+		Email string `json:"email"`
+	}
+	decoder := json.NewDecoder(req.Body)
+	params := parameters{}
+	err := decoder.Decode(&params)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't decode parameters", err)
+		return
+	}
+
+	user, err := cfg.db.CreateUser(req.Context(), params.Email)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't create new user", err)
+		return
+	}
+
+	respondWithJSON(w, http.StatusCreated, User{
+		ID: user.ID,
+		CreatedAt: user.CreatedAt,
+		UpdatedAt: user.UpdatedAt,
+		Email: user.Email,
+	})
 }
