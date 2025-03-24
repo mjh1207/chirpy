@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+
+	"github.com/google/uuid"
 )
 
 func handlerReadiness(w http.ResponseWriter, req *http.Request) {
@@ -94,4 +96,11 @@ func (cfg *apiConfig) handlerUsers(w http.ResponseWriter, req *http.Request) {
 		UpdatedAt: user.UpdatedAt,
 		Email: user.Email,
 	})
+}
+
+func handlerChirps(w http.ResponseWriter, req *http.Request) {
+	type parameters struct {
+		Body string `json:"body"`
+		User_Id uuid.UUID `json:"user_id"`
+	}
 }
