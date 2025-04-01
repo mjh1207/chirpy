@@ -136,6 +136,4 @@ func (cfg *apiConfig) handlerChirps(w http.ResponseWriter, req *http.Request) {
 		User_Id: chirp.UserID.String(),
 	})
 
-
-
 }
