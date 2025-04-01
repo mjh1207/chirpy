@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/google/uuid"
+	"github.com/mjh1207/chirpy/internal/database"
 )
 
 func handlerReadiness(w http.ResponseWriter, req *http.Request) {
@@ -98,9 +99,43 @@ func (cfg *apiConfig) handlerUsers(w http.ResponseWriter, req *http.Request) {
 	})
 }
 
-func handlerChirps(w http.ResponseWriter, req *http.Request) {
+func (cfg *apiConfig) handlerChirps(w http.ResponseWriter, req *http.Request) {
 	type parameters struct {
 		Body string `json:"body"`
 		User_Id uuid.UUID `json:"user_id"`
 	}
+
+	decoder := json.NewDecoder(req.Body)
+	params := parameters{}
+	err := decoder.Decode(&params)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't decode parameters", err)
+		return
+	}
+
+	const maxChirpLength = 140
+	if len(params.Body) > maxChirpLength {
+		respondWithError(w, http.StatusBadRequest, "Chirp is too long", nil)
+		return
+	}
+
+	chirp, err := cfg.db.CreateChirp(req.Context(), database.CreateChirpParams{
+		Body: params.Body,
+		UserID: params.User_Id,
+	})
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't create new chirp", err)
+		return
+	}
+
+	respondWithJSON(w, http.StatusCreated, Chirp {
+		ID: chirp.ID,
+		CreatedAt: chirp.CreatedAt,
+		UpdatedAt: chirp.UpdatedAt,
+		Body: chirp.Body,
+		User_Id: chirp.UserID.String(),
+	})
+
+
+
 }
