@@ -43,36 +43,6 @@ func (cfg *apiConfig) handlerReset(w http.ResponseWriter, req *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func handlerValidate(w http.ResponseWriter, req *http.Request) {
-	type parameters struct {
-		Body string `json:"body"`
-	}
-	type returnVals struct {
-		Valid bool `json:"valid"`
-		Cleaned_body string `json:"cleaned_body"`
-	}
-
-	decoder := json.NewDecoder(req.Body)
-	params := parameters{}
-	err := decoder.Decode(&params)
-	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Couldn't decode parameters", err)
-		return
-	}
-
-	const maxChirpLength = 140
-	if len(params.Body) > maxChirpLength {
-		respondWithError(w, http.StatusBadRequest, "Chirp is too long", nil)
-		return
-	}
-
-	respondWithJSON(w, http.StatusOK, returnVals{
-		Valid: true,
-		Cleaned_body: replaceProfanity(params.Body),
-	})
-
-}
-
 func (cfg *apiConfig) handlerUsers(w http.ResponseWriter, req *http.Request) {
 	type parameters struct {
 		Email string `json:"email"`
@@ -99,7 +69,7 @@ func (cfg *apiConfig) handlerUsers(w http.ResponseWriter, req *http.Request) {
 	})
 }
 
-func (cfg *apiConfig) handlerChirps(w http.ResponseWriter, req *http.Request) {
+func (cfg *apiConfig) handlerPostChirps(w http.ResponseWriter, req *http.Request) {
 	type parameters struct {
 		Body string `json:"body"`
 		User_Id uuid.UUID `json:"user_id"`
@@ -120,7 +90,7 @@ func (cfg *apiConfig) handlerChirps(w http.ResponseWriter, req *http.Request) {
 	}
 
 	chirp, err := cfg.db.CreateChirp(req.Context(), database.CreateChirpParams{
-		Body: params.Body,
+		Body: replaceProfanity(params.Body),
 		UserID: params.User_Id,
 	})
 	if err != nil {
@@ -136,4 +106,46 @@ func (cfg *apiConfig) handlerChirps(w http.ResponseWriter, req *http.Request) {
 		User_Id: chirp.UserID.String(),
 	})
 
+}
+
+func (cfg *apiConfig) handlerGetChirps(w http.ResponseWriter, req *http.Request) {
+	chirps, err := cfg.db.GetAllChirps(req.Context())
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't get chirps from database", err)
+		return
+	}
+
+	var chirpsSlice []Chirp
+	for _, chirp := range chirps {
+		chirpsSlice = append(chirpsSlice, Chirp{
+			ID: chirp.ID,
+			CreatedAt: chirp.CreatedAt,
+			UpdatedAt: chirp.UpdatedAt,
+			Body: chirp.Body,
+			User_Id: chirp.UserID.String(),
+		})
+	}
+	respondWithJSON(w, http.StatusOK, chirpsSlice)
+}
+
+func (cfg *apiConfig) handlerGetChirp(w http.ResponseWriter, req *http.Request) {
+	id := req.PathValue("chirpID")
+	parsedId, err := uuid.Parse(id)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Not a valid uuid", err)
+		return
+	}
+	chirp, err := cfg.db.GetChirp(req.Context(), parsedId)
+	if err != nil {
+		respondWithError(w, http.StatusNotFound, "Unable to get chirp", err)
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, Chirp{
+		ID: chirp.ID,
+		CreatedAt: chirp.CreatedAt,
+		UpdatedAt: chirp.UpdatedAt,
+		Body: chirp.Body,
+		User_Id: chirp.UserID.String(),
+	})
 }
