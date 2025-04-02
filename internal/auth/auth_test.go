@@ -1,6 +1,8 @@
 package auth
 
 import (
+	"fmt"
+	"net/http"
 	"testing"
 	"time"
 
@@ -66,5 +68,33 @@ func TestInvalidSecret(t *testing.T) {
 	_, err = ValidateJWT(token, invalidSecret)
 	if err == nil {
 		t.Fatalf("Expected error when validating token, got nil")
+	}
+}
+
+func TestBearerToken(t *testing.T) {
+	userID := uuid.New()
+	secret := "test-secret"
+
+	token, err := MakeJWT(userID, secret, time.Second)
+	if err != nil {
+		t.Fatalf("Failed to create token: %v", err)
+	}
+
+
+	req, err := http.NewRequest("GET", "https://example.com", nil)
+	if err != nil {
+		t.Fatalf("Failed to create request: %v", err)
+	}
+
+	req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token))
+
+	token, err = GetBearerToken(req.Header)
+	if err != nil {
+		t.Fatalf("Failed to get authorization from headers: %v", err)
+	}
+
+	_, err = ValidateJWT(token, secret)
+	if err != nil {
+		t.Fatalf("Failed to validate bearer token")
 	}
 }

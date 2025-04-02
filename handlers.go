@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/mjh1207/chirpy/internal/auth"
@@ -86,13 +87,26 @@ func (cfg *apiConfig) handlerPostChirps(w http.ResponseWriter, req *http.Request
 		User_Id uuid.UUID `json:"user_id"`
 	}
 
+	token, err := auth.GetBearerToken(req.Header)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't retrieve bearer token", err)
+		return
+	}
+
+	userID, err := auth.ValidateJWT(token, cfg.jwtSecret)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Unauthorized", err)
+		return
+	}
+
 	decoder := json.NewDecoder(req.Body)
 	params := parameters{}
-	err := decoder.Decode(&params)
+	err = decoder.Decode(&params)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't decode parameters", err)
 		return
 	}
+	params.User_Id = userID
 
 	const maxChirpLength = 140
 	if len(params.Body) > maxChirpLength {
@@ -165,6 +179,7 @@ func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, req *http.Request) {
 	type parameters struct {
 		Password string `json:"password"`
 		Email string `json:"email"`
+		ExpiresInSeconds int `json:"expires_in_seconds"`
 	}
 
 	decoder := json.NewDecoder(req.Body)
@@ -173,6 +188,10 @@ func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't decode parameters", err)
 		return
+	}
+
+	if params.ExpiresInSeconds == 0 || params.ExpiresInSeconds > 3600 {
+		params.ExpiresInSeconds = 3600
 	}
 
 	user, err := cfg.db.GetUserByEmail(req.Context(), params.Email)
@@ -187,10 +206,19 @@ func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	token, err := auth.MakeJWT(user.ID, cfg.jwtSecret, time.Duration(params.ExpiresInSeconds)*time.Second)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Could not create authentication token", err)
+		return
+	}
+
+	w.Header().Set("Authorization", fmt.Sprintf("Bearer %s", token))
+
 	respondWithJSON(w, http.StatusOK, User{
 		ID: user.ID,
 		CreatedAt: user.CreatedAt,
 		UpdatedAt: user.UpdatedAt,
 		Email: user.Email,
+		Token: token,
 	})
 }
