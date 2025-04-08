@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/mjh1207/chirpy/internal/auth"
@@ -179,7 +178,12 @@ func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, req *http.Request) {
 	type parameters struct {
 		Password string `json:"password"`
 		Email string `json:"email"`
-		ExpiresInSeconds int `json:"expires_in_seconds"`
+	}
+
+	type response struct {
+		User
+		Token string `json:"token"`
+		RefreshToken string `json:"refresh_token"`
 	}
 
 	decoder := json.NewDecoder(req.Body)
@@ -188,10 +192,6 @@ func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't decode parameters", err)
 		return
-	}
-
-	if params.ExpiresInSeconds == 0 || params.ExpiresInSeconds > 3600 {
-		params.ExpiresInSeconds = 3600
 	}
 
 	user, err := cfg.db.GetUserByEmail(req.Context(), params.Email)
@@ -206,19 +206,84 @@ func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	token, err := auth.MakeJWT(user.ID, cfg.jwtSecret, time.Duration(params.ExpiresInSeconds)*time.Second)
+	accessToken, err := auth.MakeJWT(user.ID, cfg.jwtSecret)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Could not create authentication token", err)
 		return
 	}
 
-	w.Header().Set("Authorization", fmt.Sprintf("Bearer %s", token))
+	refreshToken, err := auth.MakeRefreshToken()
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Could not create refresh token", err)
+		return
+	}
 
-	respondWithJSON(w, http.StatusOK, User{
-		ID: user.ID,
-		CreatedAt: user.CreatedAt,
-		UpdatedAt: user.UpdatedAt,
-		Email: user.Email,
-		Token: token,
+	_, err = cfg.db.CreateRefreshToken(req.Context(), database.CreateRefreshTokenParams{
+		Token: refreshToken,
+		UserID: user.ID,
 	})
+
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Could not create refresh token record", err)
+		return
+	}
+
+	w.Header().Set("Authorization", fmt.Sprintf("Bearer %s", accessToken))
+
+	respondWithJSON(w, http.StatusOK, response{
+		User: User{
+			ID: user.ID,
+			CreatedAt: user.CreatedAt,
+			UpdatedAt: user.UpdatedAt,
+			Email: user.Email,
+		},
+		Token: accessToken,
+		RefreshToken: refreshToken,
+	})
+}
+
+func (cfg *apiConfig) handlerRefresh(w http.ResponseWriter, req *http.Request) {
+	headerToken, err := auth.GetBearerToken(req.Header)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Refresh token required", err)
+		return
+	}
+
+	refreshToken, err := cfg.db.GetRefreshToken(req.Context(), headerToken)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Token expired or not found", err)
+		return
+	}
+
+	user, err := cfg.db.GetUserFromRefreshToken(req.Context(), refreshToken.Token)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "No users found with refresh provided token", err)
+		return
+	}
+
+	accessToken, err := auth.MakeJWT(user.ID, cfg.jwtSecret)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Unable to issue new access token", err)
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, AccessToken{
+		Token: accessToken,
+	})
+}
+
+func (cfg *apiConfig) handlerRevoke(w http.ResponseWriter, req *http.Request) {
+	headerToken, err := auth.GetBearerToken(req.Header)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Refresh token required", err)
+		return
+	}
+
+	err = cfg.db.RevokeToken(req.Context(), headerToken)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to revoke refresh token", err)
+		return
+	}
+
+	respondWithJSON(w, http.StatusNoContent, struct{}{})
 }

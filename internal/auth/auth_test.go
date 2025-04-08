@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 )
 
@@ -16,7 +17,7 @@ func TestJWTCreationAndValidation(t *testing.T) {
 	secret := "test-secret"
 
 	// Create a token
-	token, err := MakeJWT(userID, secret, time.Hour)
+	token, err := MakeJWT(userID, secret)
 	if err != nil {
 		t.Fatalf("Failed to create token: %v", err)
 	}
@@ -38,13 +39,28 @@ func TestExpiredToken(t *testing.T) {
 	secret := "test-secret"
 
 	// Create a token that expires after one second
-	token, err := MakeJWT(userID, secret, time.Second)
+	token, err := MakeJWT(userID, secret)
 	if err != nil {
 		t.Fatalf("Failed to create token: %v", err)
 	}
 
-	// Wait for token to expire
-	time.Sleep(2 * time.Second)
+	// Modify token expiration
+	parsedToken, err := jwt.ParseWithClaims(token, &jwt.RegisteredClaims{}, func(token *jwt.Token) (any, error) {
+		return []byte(secret), nil
+	})
+
+	if err != nil {
+		t.Fatalf("Failed to parse token: %v", err)
+	}
+
+	if claims, ok := parsedToken.Claims.(*jwt.RegisteredClaims); ok {
+		claims.ExpiresAt = jwt.NewNumericDate(time.Now().Add(-time.Hour))
+
+		token, err = jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(secret))
+		if err != nil {
+			t.Fatalf("Failed to create new token: %v", err)
+		}
+	}
 
 	// Attempt to validate expired token
 	_, err = ValidateJWT(token, secret)
@@ -59,7 +75,7 @@ func TestInvalidSecret(t *testing.T) {
 	invalidSecret := "invalid-secret"
 	
 	// Create a token
-	token, err := MakeJWT(userID, secret, time.Hour)
+	token, err := MakeJWT(userID, secret)
 	if err != nil {
 		t.Fatalf("Failed to create token: %v", err)
 	}
@@ -75,7 +91,7 @@ func TestBearerToken(t *testing.T) {
 	userID := uuid.New()
 	secret := "test-secret"
 
-	token, err := MakeJWT(userID, secret, time.Second)
+	token, err := MakeJWT(userID, secret)
 	if err != nil {
 		t.Fatalf("Failed to create token: %v", err)
 	}
