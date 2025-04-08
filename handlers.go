@@ -94,7 +94,7 @@ func (cfg *apiConfig) handlerUpdateUser(w http.ResponseWriter, req *http.Request
 
 	userID, err := auth.ValidateJWT(token, cfg.jwtSecret)
 	if err != nil {
-		respondWithError(w, http.StatusUnauthorized, "Unauthorized", err)
+		respondWithError(w, http.StatusUnauthorized, "Unauthorized request", err)
 		return
 	}
 
@@ -144,7 +144,7 @@ func (cfg *apiConfig) handlerPostChirps(w http.ResponseWriter, req *http.Request
 
 	userID, err := auth.ValidateJWT(token, cfg.jwtSecret)
 	if err != nil {
-		respondWithError(w, http.StatusUnauthorized, "Unauthorized", err)
+		respondWithError(w, http.StatusUnauthorized, "Unauthorized request", err)
 		return
 	}
 
@@ -182,6 +182,46 @@ func (cfg *apiConfig) handlerPostChirps(w http.ResponseWriter, req *http.Request
 
 }
 
+func (cfg *apiConfig) handlerDeleteChirp(w http.ResponseWriter, req *http.Request) {
+	token, err := auth.GetBearerToken(req.Header)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Unauthorized request", err)
+		return
+	}
+
+	userId, err := auth.ValidateJWT(token, cfg.jwtSecret)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Unauthorized request", err)
+		return
+	}
+
+	param := req.PathValue("chirpID")
+	chirpID, err := uuid.Parse(param)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Not a valid chirpID", err)
+		return
+	}
+
+	chirp, err := cfg.db.GetChirp(req.Context(), chirpID)
+	if err != nil {
+		respondWithError(w, http.StatusNotFound, "Chirp not found", err)
+		return
+	}
+
+	if userId != chirp.UserID {
+		respondWithError(w, http.StatusForbidden, "You do not have permission to delete this Chirp", err)
+		return
+	}
+
+	err = cfg.db.DeleteChirp(req.Context(), chirpID)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to delete chirp", err)
+		return
+	}
+
+	respondWithJSON(w, http.StatusNoContent, struct{}{})
+}
+
 func (cfg *apiConfig) handlerGetChirps(w http.ResponseWriter, req *http.Request) {
 	chirps, err := cfg.db.GetAllChirps(req.Context())
 	if err != nil {
@@ -206,7 +246,7 @@ func (cfg *apiConfig) handlerGetChirp(w http.ResponseWriter, req *http.Request) 
 	id := req.PathValue("chirpID")
 	parsedId, err := uuid.Parse(id)
 	if err != nil {
-		respondWithError(w, http.StatusBadRequest, "Not a valid uuid", err)
+		respondWithError(w, http.StatusBadRequest, "Not a valid chirpID", err)
 		return
 	}
 	chirp, err := cfg.db.GetChirp(req.Context(), parsedId)
