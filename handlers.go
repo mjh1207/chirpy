@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 
 	"github.com/google/uuid"
 	"github.com/mjh1207/chirpy/internal/auth"
@@ -391,9 +392,15 @@ func (cfg *apiConfig) handlerWebhooks(w http.ResponseWriter, req *http.Request) 
 		}
 	}
 
+	apiKey, err := auth.GetAPIKey(req.Header)
+	if err != nil || apiKey != os.Getenv("POLKA_KEY") {
+		respondWithError(w, http.StatusUnauthorized, "Unauthorized request", err)
+		return
+	}
+
 	decoder := json.NewDecoder(req.Body)
 	params := parameters{}
-	err := decoder.Decode(&params)
+	err = decoder.Decode(&params)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't decode parameters", err)
 		return
