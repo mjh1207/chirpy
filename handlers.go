@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"sort"
 
 	"github.com/google/uuid"
 	"github.com/mjh1207/chirpy/internal/auth"
@@ -228,17 +229,18 @@ func (cfg *apiConfig) handlerDeleteChirp(w http.ResponseWriter, req *http.Reques
 }
 
 func (cfg *apiConfig) handlerGetChirps(w http.ResponseWriter, req *http.Request) {
-	param := req.URL.Query().Get("author_id")
+	authorParam := req.URL.Query().Get("author_id")
+	sortParam := req.URL.Query().Get("sort")
 	var chirps []database.Chirp
 	var err error
-	if param == "" {
+	if authorParam == "" {
 		chirps, err = cfg.db.GetAllChirps(req.Context())
 		if err != nil {
 			respondWithError(w, http.StatusInternalServerError, "Couldn't get chirps from database", err)
 			return
 		}
 	} else {
-		authorID, err := uuid.Parse(param)
+		authorID, err := uuid.Parse(authorParam)
 		if err != nil {
 			respondWithError(w, http.StatusBadRequest, "Not a valid author id", err)
 			return
@@ -259,6 +261,9 @@ func (cfg *apiConfig) handlerGetChirps(w http.ResponseWriter, req *http.Request)
 			Body: chirp.Body,
 			User_Id: chirp.UserID.String(),
 		})
+	}
+	if sortParam == "desc" {
+		sort.Slice(chirpsSlice, func(i, j int) bool {return chirpsSlice[i].CreatedAt.After(chirpsSlice[j].CreatedAt)})
 	}
 	respondWithJSON(w, http.StatusOK, chirpsSlice)
 }
