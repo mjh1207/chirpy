@@ -228,13 +228,29 @@ func (cfg *apiConfig) handlerDeleteChirp(w http.ResponseWriter, req *http.Reques
 }
 
 func (cfg *apiConfig) handlerGetChirps(w http.ResponseWriter, req *http.Request) {
-	chirps, err := cfg.db.GetAllChirps(req.Context())
-	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Couldn't get chirps from database", err)
-		return
+	param := req.URL.Query().Get("author_id")
+	var chirps []database.Chirp
+	var err error
+	if param == "" {
+		chirps, err = cfg.db.GetAllChirps(req.Context())
+		if err != nil {
+			respondWithError(w, http.StatusInternalServerError, "Couldn't get chirps from database", err)
+			return
+		}
+	} else {
+		authorID, err := uuid.Parse(param)
+		if err != nil {
+			respondWithError(w, http.StatusBadRequest, "Not a valid author id", err)
+			return
+		}
+		chirps, err = cfg.db.GetChirpsForUser(req.Context(), authorID)
+		if err != nil {
+			respondWithError(w, http.StatusInternalServerError, fmt.Sprintf("Couldn't retrieve Chirps for authorID: %v", authorID), err)
+			return
+		}
 	}
 
-	var chirpsSlice []Chirp
+	chirpsSlice := make([]Chirp, 0, len(chirps))
 	for _, chirp := range chirps {
 		chirpsSlice = append(chirpsSlice, Chirp{
 			ID: chirp.ID,
